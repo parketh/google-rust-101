@@ -2,10 +2,10 @@
 
 ## Goals for today
 
-- Rust is a deep language (similar to C++, Go) rather than C
 - Get a feel for the Rust language
 - Understand advantages, tradeoffs and core concepts
 - Write some Rust code
+- Rust is a deep language (similar to C++, Go) rather than C
 - Won't learn about concurrency
 - Won't learn about writing unsafe code (code dealing with raw pointers, where you can deal with memory unsafety)
 
@@ -30,22 +30,23 @@
 - On Android, Rust is used for keystore2, a library used for storing cryptographic keys
 - Daemons running on Android (e.g. ones powering Bluetooth) have been increasingly rewritten in Rust
 
-## Type safety and variable lifetime
+## Memory allocation failures
 
 ### Example 1
 
-```
+```rust
 fn upper(string: &str) -> &str {
     let uppercased = string.to_uppercase();
     return &uppercased
 }
 ```
+
 - Think of this as a `const char*` in C++, which is an immutable read-only variable
 - Guaranteed to reference UTF-8
 - Has an explicit length
 - In this example we get an error because we are referencing a variable, `uppercased`, on the stack, and it doesn't live long enough to be accessed (very common error in Rust)
 
-```
+```rust
 let string_slice: &str = "hello";
 let string: String = string_slice.to_string();
 assert_eq!(string_slice, &string);
@@ -56,7 +57,7 @@ assert_eq!(string_slice, &string);
 
 ### Example 2
 
-```
+```rust
 fn min<T: PartialOrd>(a: T, b: T) -> T {
     if a < b {
         a
@@ -69,7 +70,7 @@ fn min<T: PartialOrd>(a: T, b: T) -> T {
 - `T` of type `PartialOrd` allows values to be compared
 - If-Else statements require both if and else return values to be defined otherwise 
 
-```
+```rust
 #[test]
 fn test_min_bad() {
     let a = "aaa".to_string();
@@ -81,7 +82,7 @@ fn test_min_bad() {
 - Rust has built-in sytem for unit testing using `#[test]`
 - This test doesn't work in Rust because `(a + "ccc")` is created as a temporary value, but that only lives until the end of the line in Rust, so in the next line it can no longer be accessed
 
-```
+```rust
 #[test]
 fn test_min_fixed() {
     let a = "aaa".to_string();
@@ -92,6 +93,14 @@ fn test_min_fixed() {
 }
 ```
 - Use `let` binding to increase lifetime of a variable
+
+## Memory allocation error handling
+
+- Rust does not have concept of exceptions (for error messages))
+- Instead, panic is used - a runtime controlled crash where program exits (similar to in Go)
+- In Rust, you can register a handler for specifying what should happen when these types of errors occur
+- At runtime, compiler will invoke certain panic hooks in response to memory allocation failures (to handle exceptions)
+- No exception handling out of the box as Rust tries to be very explicit about heap allocations (whereas exceptions are implicit)
 
 # Introduction to Rust
 
@@ -114,9 +123,9 @@ fn test_min_fixed() {
 - String slices: `&str`
 - Tuples: `()`, `(T,)`, `(T, U)`, … - unit type `()` is used for functions return type of no meaningful value
 
-Structures
+## Structures
 
-```
+```rust
 struct Character {
     name: String,
     age: u32,
@@ -131,17 +140,160 @@ c.1 // access c.age using index
 let t = Thing; // empty Struct (0 size at runtime, as Rust has no pointers)
 ```
 
-Enumerations
+## Enumerations
+
+```rust
+enum Decision {
+    Undecided,
+    Approved,
+    Rejected
+}
+
+Decision::Undecided
+Decision::Approved
+Decision::Rejected
 
 
+enum WebEvent {
+    PageLoad,
+    KeyPress(char),
+    Click{x: i64, y: i64}
+}
 
-Panic
+WebEvent::PageLoad
+WebEvent::KeyPress('j')
+WebEvent::Click{x: 150, y: 230}
+```
 
-- Rust does not have concept of exceptions (for error messages))
-- Instead, panic is used - a runtime controlled crash where program exits (similar to in Go)
+- Enums are very useful and can be used similarly to structs
 
+## Imperative Code
+
+```rust
+fn hypotenuse(a: f64, b: f64) -> f64 {
+  let a_squared = a * a;
+  let b_squared = b.powi(2);
+  let sum = a_squared + b_squared;
+  sum.sqrt()
+}
+
+fn factorial(n: u64) -> u64 {
+    let mut result = 1;
+    for current in 2..=n {
+        result *= current;
+    }
+    result
+}
+```
+
+- Variables are immutable by default so need to use `mut` to specify mutable variable
+- `2..=n` specifies range expression from 2 to n (inclusive, as specified by `=`)
+- The `factorial` function can overflow if `n` gets too big - can specify behaviour if overflow occurs (e.g. trigger panic condition)
+
+## Options
+
+```rust
+enum Option<T> {
+  Some(T),
+  None,
+}
+
+fn holiday_gift(year: i32) -> Option<Gift>
+```
+
+- `Option` can be used to return `T` if it exists, otherwise `None` 
+- Options needs to be complete, should model entire domain and handle all possible cases, otherwise error will be returned at compile time
+- `.unwrap()` can be used to return the value inside `Option`, however if it does not exist an error will be returned (linter can be used to warn against partial functions with incomplete domain)
+- Can use `.expect()` to test whether always returns a value (and trigger error if not)
+
+```rust
+fn use_holiday_gift_2018() {
+  match holiday_gift(2018) {
+    Some(gift) => regift(gift, "Sis"),
+    None => Memegen::rant(),
+  }
+}
+```
+
+- `match` is the preferred way to specify action for each case
+
+## Functional Influence
+
+```rust
+fn factorial2(n: u64) -> Option<u64> {
+  match n {
+    0 => Some(1),
+    _ => match factorial2(n-1) {
+      Some(prev) => prev.checked_mul(n),
+      None => None,
+    }
+  }
+}
+```
+
+- `match` can return a function rather than a value
+
+```rust
+fn factorial2(n: u64) -> Option<u64> {
+  match n {
+    0 => Some(1),
+    _ => factorial2(n - 1)?.checked_mul(n),
+  }
+}
+
+```
+
+- `?` is used for optional chaining that returns back to caller if there is an error, but otherwise continues executing the code
+- Very common design pattern
+
+## Macros
+
+```rust
+fn regift(gift: Gift, who: &str) {
+    println!("Look {}! I get you a {}", who, gift);
+}
+```
+- The `!` part of `println!` tells us that it is a macro
+
+## Reference Types
+
+Three ways to reference:
+1. `fn f(t: Thing);` takes (consumes a `Thing`), requires no references to `t`, eg. by other parts of the program since the function will have deallocated `t` by the end of its use of the variable
+2. `fn f(t: &mut Thing);` borrows a `Thing` mutably, caller will have a reference to `t` but compiler ensures no *other* references to `t`
+3. `fn f(t: &Thing);` borrows a Thing immutably, compiler ensures no mutable references to `t` (shared references with no mutation)
+
+- Reference types are really what makes Rust Rust
+- Borrowing is the concept of transferring ownership of a value temporarily to an entity and then returning it to an original owner
+- When we call a function and pass in a value, the caller is no longer responsible for deallocating the reference as responsibility is passed on to the function
+- If we pass an immutable reference instead then we cannot access the reference anywhere else (since there may be some temporary invariance that is not upheld)
+- There is a cloning function `t.clone()` (requires `#[derive(Clone)]`)to recursively copy the object to heap to circumvent errors above - but allows explicitly allocating to heap rather than this being done implicitly
+- `Box` is standard type for moving data from stack to heap - eg. `let bt = Box::new(Thing(100));`
+
+## Specifying lifetimes
+
+- Lifetime elision: when passing in references to functions, it is fine to return a reference if its lifetime is shorter than or equal to the lifetime of the input passed in
+- When passing in mutliple references as input, can use `'a` to specify which input is used to produce the output
 
 # Example code
 
+## Creating own methods
+
+```rust
+impl<T> List<T> {
+    pub fn new() -> Self {
+        List::Empty
+    }
+    pub fn is_empty(&self) -> bool {
+        match self {
+            List::Empty => true,
+            _ => false,
+        }
+    }
+}
+```
+
+- `new()` is convention used for constructor function
+- `is_empty()` takes immutable reference `self` and returns values based on `match`
 
 # Codelab
+
